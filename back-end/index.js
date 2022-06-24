@@ -9,19 +9,19 @@ import dotenv from "dotenv";
 const app = express(); 
 app.use(cors()); 
 app.use(express.json()); 
-dotenv.config(); 
+dotenv.config();  
 
-const mongoClient = new MongoClient("mongodb://localhost:27017"); 
-let db; 
+const mongoClient = new MongoClient(process.env.MONGO_URI); 
+var db; 
 
-mongoClient.connect().then(() => { 
+mongoClient.connect(() => { 
     db = mongoClient.db(process.env.DATABASE_NAME); 
 }); 
 
 const username = [];  
 const mensage = []; 
 
-app.post("/participants", (request, response) => { 
+app.post("/participants", async (request, response) => { 
     const usersName = { 
         name: request.body.name, 
         lastStatus: Date.now() 
@@ -39,7 +39,18 @@ app.post("/participants", (request, response) => {
         type: "status", 
         time: hoje
     } 
-    mensage.push(mensageUser); 
+    mensage.push(mensageUser);  
+
+    try { 
+        await db.collection('participants').insertOne(usersName); 
+        response.status(200).send("O mongo ta funcionando"); 
+        mongoClient.close();
+    } catch(error) {
+        console.log(error); 
+        response.status(500).send("Deu ruim rapaz");  
+        mongoClient.close(); 
+        return;
+    }
 
     if(!usersName.name) { 
         response.sendStatus(422);  
@@ -49,19 +60,23 @@ app.post("/participants", (request, response) => {
         return;
     } else {
         username.push(usersName); 
-        response.sendStatus(201);
+        response.sendStatus(201); 
+        return;
+    }
+});  
+
+app.get("/participants", async (request,response) => { 
+
+    try{ 
+        const allParticipants = await db.collection('participants').find().toArray(); 
+        response.status(200).send(allParticipants);
+        mongoClient.close();
+    } catch(error) { 
+        console.log(error); 
+        response.sendStatus(500); 
+        mongoClient.close();
     }
 }); 
-
-app.get("/participants", (request,response) => { 
-    const allParticipants = username; 
-    console.log(allParticipants); 
-    response.status(200).send(allParticipants);
-}); 
-
-app.post("/messages", (request,response) => {  
-    const oi = "oi";
-});
 
 app.listen(process.env.PORT, () => { 
     console.log(chalk.blue.bold(`\nFuncionando na ${process.env.PORT}`));
