@@ -1,7 +1,7 @@
 import express from "express";   
 import chalk from "chalk"; 
 import cors from 'cors'; 
-import { MongoClient } from "mongodb"; 
+import { MongoClient, ObjectId  } from "mongodb"; 
 import 'dayjs/locale/pt-br.js'; 
 import dayjs from 'dayjs'; 
 import dotenv from "dotenv"; 
@@ -47,7 +47,6 @@ app.post("/participants", async (request, response) => {
         name: request.body.name, 
         lastStatus: Date.now() 
     }
-    console.log(usersName); 
     
     const validation = username.validate(request.body, { abortEarly: true }); 
 
@@ -68,9 +67,15 @@ app.post("/participants", async (request, response) => {
         time: hoje
     }   
 
-    try {  
+    try { 
+        const findRepeated = await db.collection('participants').findOne({name: usersName.name});  
         await db.collection('participants').insertOne(usersName);  
-        await db.collection('status').insertOne(mensageUser);  
+        await db.collection('status').insertOne(mensageUser);   
+        console.log(findRepeated); 
+        if(findRepeated) { 
+            response.sendStatus(409); 
+            return;
+        }
     } catch(error) {
         console.log(error); 
         response.sendStatus(500);  
@@ -79,7 +84,22 @@ app.post("/participants", async (request, response) => {
     }
 
     response.sendStatus(201); 
-});   
+});    
+
+app.get("/messages", async (request,response) => { 
+    const limit = parseInt(request.query.limit); 
+
+    try { 
+        const allMensages = await db.collection('mensages').find().toArray();
+        response.status(200).send(allMensages); 
+        return;
+    } catch(error) { 
+        console.log(error);
+        response.sendStatus(500);
+        mongoClient.close(); 
+        return;
+    } 
+}); 
 
 app.post("/messages", async (request,response) => { 
     const validation = message.validate(request.body, { abortEarly: true }); 
@@ -117,21 +137,46 @@ app.post("/messages", async (request,response) => {
     response.sendStatus(201);
 }); 
 
-app.get("/messages", async (request,response) => { 
-    const limit = parseInt(request.query.limit);
-    console.log(limit); 
+app.post("/status", async (request,response) => { 
+    const user = request.headers.user;  
+
+    const users = { 
+        name: user, 
+        lastStatus: Date.now() 
+    }  
 
     try { 
-        const allMensages = await db.collection('mensages').find().toArray();
-        response.status(200).send(allMensages); 
-        return;
+        const findParticipants = await db.collection('participants').findOne({name: user}); 
+        if(!findParticipants.name) { 
+            response.sendStatus(404);
+            return;
+        }
     } catch(error) { 
-        console.log(error);
+        console.log(error); 
         response.sendStatus(500);
-        mongoClient.close(); 
+        mongoClient.close();
         return;
     } 
-});
+
+    response.sendStatus(200);
+});  
+
+app.delete("/messages/:id", async (request,response) => {
+    const id = request.params.id; 
+    const user = request.headers.user; 
+
+    console.log(id);
+
+    try { 
+        await db.collection('mensages').deleteOne({ _id: new ObjectId(id) });
+    } catch(error) { 
+        console.log(error);
+        response.sendStatus(500); 
+        return;
+    } 
+
+    response.sendStatus(200);
+}) 
 
 app.listen(process.env.PORT, () => { 
     console.log(chalk.blue.bold(`\nFuncionando na ${process.env.PORT}`));
