@@ -4,7 +4,8 @@ import cors from 'cors';
 import { MongoClient } from "mongodb"; 
 import 'dayjs/locale/pt-br.js'; 
 import dayjs from 'dayjs'; 
-import dotenv from "dotenv";
+import dotenv from "dotenv"; 
+import joi from "joi";
 
 const app = express(); 
 app.use(cors()); 
@@ -18,16 +19,43 @@ mongoClient.connect(() => {
     db = mongoClient.db(process.env.DATABASE_NAME); 
 }); 
 
-const username = [];  
-const mensage = []; 
+const username = joi.object({ 
+    name: joi.string().required()
+});   
+
+const message = joi.object({ 
+   to: joi.string().required(),
+   text: joi.string().required(), 
+   type: joi.string().required() 
+});
+
+app.get("/participants", async (request,response) => { 
+
+    try{ 
+        const allParticipants = await db.collection('participants').find().toArray(); 
+        response.status(200).send(allParticipants); 
+        return;
+    } catch(error) { 
+        console.log(error); 
+        response.sendStatus(500); 
+        mongoClient.close();
+    } 
+}); 
 
 app.post("/participants", async (request, response) => { 
     const usersName = { 
         name: request.body.name, 
         lastStatus: Date.now() 
     }
-    console.log(usersName);
-    const findRepeated = username.find(user => user.name === request.body.name);  
+    console.log(usersName); 
+    
+    const validation = username.validate(request.body, { abortEarly: true }); 
+
+    if(validation.error) { 
+        console.log(validation.error.details);
+        response.sendStatus(422); 
+        return;
+    }
  
     let now = dayjs().locale('pt-br');
     let hoje = now.format("HH:mm:ss"); 
@@ -38,45 +66,72 @@ app.post("/participants", async (request, response) => {
         text: "Entra na sala...", 
         type: "status", 
         time: hoje
-    } 
-    mensage.push(mensageUser);  
+    }   
 
-    try { 
-        await db.collection('participants').insertOne(usersName); 
-        response.status(200).send("O mongo ta funcionando"); 
-        mongoClient.close();
+    try {  
+        await db.collection('participants').insertOne(usersName);  
+        await db.collection('status').insertOne(mensageUser);  
     } catch(error) {
         console.log(error); 
-        response.status(500).send("Deu ruim rapaz");  
+        response.sendStatus(500);  
         mongoClient.close(); 
         return;
     }
 
-    if(!usersName.name) { 
-        response.sendStatus(422);  
-        return;
-    } else if(findRepeated) { 
-        response.sendStatus(409); 
-        return;
-    } else {
-        username.push(usersName); 
-        response.sendStatus(201); 
-        return;
+    response.sendStatus(201); 
+});   
+
+app.post("/messages", async (request,response) => { 
+    const validation = message.validate(request.body, { abortEarly: true }); 
+    const user = request.headers.user;  
+
+    let now = dayjs().locale('pt-br');
+    let hoje = now.format("HH:mm:ss");  
+
+    const sendText = {  
+        from: user,
+        to: request.body.to, 
+        text: request.body.text, 
+        type: request.body.type, 
+        time: hoje
     }
-});  
 
-app.get("/participants", async (request,response) => { 
+    console.log(sendText); 
+    console.log(user); 
 
-    try{ 
-        const allParticipants = await db.collection('participants').find().toArray(); 
-        response.status(200).send(allParticipants);
-        mongoClient.close();
+    if(validation.error) { 
+        console.log(validation.error.details); 
+        response.sendStatus(422); 
+        return;
+    } 
+
+    try {
+        await db.collection('mensages').insertOne(sendText); 
     } catch(error) { 
         console.log(error); 
-        response.sendStatus(500); 
-        mongoClient.close();
+        response.sendStatus(500);
+        mongoClient.close(); 
+        return;
     }
+
+    response.sendStatus(201);
 }); 
+
+app.get("/messages", async (request,response) => { 
+    const limit = parseInt(request.query.limit);
+    console.log(limit); 
+
+    try { 
+        const allMensages = await db.collection('mensages').find().toArray();
+        response.status(200).send(allMensages); 
+        return;
+    } catch(error) { 
+        console.log(error);
+        response.sendStatus(500);
+        mongoClient.close(); 
+        return;
+    } 
+});
 
 app.listen(process.env.PORT, () => { 
     console.log(chalk.blue.bold(`\nFuncionando na ${process.env.PORT}`));
