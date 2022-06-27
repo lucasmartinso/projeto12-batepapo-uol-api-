@@ -171,12 +171,48 @@ app.delete("/messages/:id", async (request,response) => {
         await db.collection('mensages').deleteOne({ _id: new ObjectId(id) });
     } catch(error) { 
         console.log(error);
-        response.sendStatus(500); 
+        response.sendStatus(500);  
+        mongoClient.close();
         return;
     } 
 
     response.sendStatus(200);
-}) 
+}); 
+
+app.put("/messages/:id", async (request,response) => { 
+    const id = request.params.id; 
+    const user = request.headers.user;  
+    const validation = message.validate(request.body, { abortEarly: true }); 
+
+    console.log(id); 
+
+    if(validation.error) { 
+        response.sendStatus(422);
+        return;
+    }
+
+    try{ 
+        const findUser = await db.collection('mensages').findOne({ _id: new ObjectId(id) }) 
+        if(!findUser) { 
+            response.sendStatus(404); 
+            return;
+        } 
+        const findTo = await db.collection('participants').findOne({name: request.body.to}); 
+        if(!findTo) { 
+            response.sendStatus(401); 
+            return;
+        }
+        await db.collection('mensages').updateOne(
+            { _id: new ObjectId(id) }, 
+            {$set: request.body});
+    } catch(error) {  
+        console.log(error); 
+        response.sendStatus(500)
+        mongoClient.close();
+        return;
+    } 
+    response.sendStatus(200);
+});
 
 app.listen(process.env.PORT, () => { 
     console.log(chalk.blue.bold(`\nFuncionando na ${process.env.PORT}`));
