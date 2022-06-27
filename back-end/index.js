@@ -150,7 +150,12 @@ app.post("/status", async (request,response) => {
         if(!findParticipants.name) { 
             response.sendStatus(404);
             return;
-        }
+        } 
+        await db.collection('particpants').updateOne(
+            {name: user,},
+            {$set: {lastStatus: Date.now()}}
+            );
+        console.log(findParticipants);
     } catch(error) { 
         console.log(error); 
         response.sendStatus(500);
